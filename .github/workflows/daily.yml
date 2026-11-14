@@ -12,76 +12,73 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install requests matplotlib numpy
-      - name: Build Acumen Chart
+      - name: Install
+        run: pip install requests matplotlib numpy
+      - name: Build
         run: |
-          python << 'PY'
+          cat > tracker.py << 'PY'
           import requests, numpy as np, matplotlib.pyplot as plt
           from datetime import date, datetime
-
           try:
-            btc = requests.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', timeout=10).json()['bitcoin']['usd']
+              btc = requests.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', timeout=10).json()['bitcoin']['usd']
           except:
-            btc = 69222
-
+              btc = 69222
           vol, mu = 0.65, 0.15
-          days_short, days_long = 400, (date(2030,1,1)-date.today()).days
-          def prob_hit(S0,H,Td,lower=True,n=12000):
-            steps=Td
-            hits=0
-            for _ in range(n//100):
-              Z=np.random.normal(0,1,(100,steps))
+          days_short = 400
+          days_long = (date(2030,1,1)-date.today()).days
+          def prob_hit(S0,H,Td,lower=True,n=8000):
+              hits=0
+              steps=Td
               dt=1/365
-              drift=(mu-0.5*vol*vol)*dt
-              paths=S0*np.exp(np.cumsum(drift+vol*np.sqrt(dt)*Z, axis=1))
-              if lower:
-                hits+=np.sum(np.any(paths<=H,axis=1))
-              else:
-                hits+=np.sum(np.any(paths>=H,axis=1))
-            return hits/n
-
+              for _ in range(n//100):
+                  Z=np.random.normal(0,1,(100,steps))
+                  drift=(mu-0.5*vol*vol)*dt
+                  paths=S0*np.exp(np.cumsum(drift+vol*np.sqrt(dt)*Z, axis=1))
+                  if lower:
+                      hits+=np.sum(np.any(paths<=H, axis=1))
+                  else:
+                      hits+=np.sum(np.any(paths>=H, axis=1))
+              return hits/n
           np.random.seed(42)
           p45=prob_hit(btc,45000,days_short,True)
           p35=prob_hit(btc,35000,days_short,True)
           p750=prob_hit(btc,750000,days_long,False)
           p_short=max(p45,p35)
-
           capital=1000
           ev45=p45*0.22*capital - (1-p45)*0.15*capital
           ev35=p35*0.25*capital - (1-p35)*0.20*capital
           ev750=p750*(750000/btc-1)*capital*0.1 - (1-p750)*0.6*capital*0.1
-
           plt.style.use('dark_background')
-          fig, axs = plt.subplots(3,1,figsize=(9,9), gridspec_kw={'height_ratios':[2,1,1.2]})
+          fig, axs = plt.subplots(3,1,figsize=(9,9))
           xs=np.linspace(30000,80000,100)
-          axs[0].plot(xs,[95*np.exp(-0.00005*(x-35000)) for x in xs], color='#FF5555', label='Short Zone Prob')
+          axs[0].plot(xs,[95*np.exp(-0.00005*(x-35000)) for x in xs],color='#FF5555',label='Short Zone')
           axs[0].axvline(btc,color='white',ls='--',label=f'BTC Now ${btc:.0f}')
-          axs[0].axvline(45000,color='gold',ls=':',label='45K Short')
-          axs[0].axvline(35000,color='orange',ls=':',label='35K Short')
-          axs[0].set_title(f'HZ ANALYST $1K Acumen & Actuary | BTC ${btc:.0f} {datetime.now():%d %b %Y} Lagos - Educational',fontsize=10,weight='bold')
-          axs[0].set_ylabel('Prob %'); axs[0].legend(fontsize=7); axs[0].set_ylim(0,100)
-
+          axs[0].axvline(45000,color='gold',ls=':',label='45K')
+          axs[0].axvline(35000,color='orange',ls=':',label='35K')
+          axs[0].set_title(f'HZ ANALYST $1K Acumen & Actuary | BTC ${btc:.0f} {datetime.now():%d %b %Y} Lagos Edu',fontsize=10,weight='bold')
+          axs[0].legend(fontsize=7)
+          axs[0].set_ylim(0,100)
           axs[1].axis('off')
-          t1=[["Scenario","P Respected","Horizon","Actuary Note"],
-              [f"Short 45K","{:.0f}%".format(p45*100),f"{days_short}d before bull","Correction likely"],
-              [f"Short 35K","{:.0f}%".format(p35*100),f"{days_short}d before bull","Deep wick"],
-              [f"35K OR 45K","{:.0f}%".format(p_short*100),"Before bull","Short zone VALID"],
-              [f"Long 750K","{:.1f}%".format(p750*100),f"{days_long}d to 2030","Convex lottery long"]]
+          t1=[["Scenario","P Respected","Horizon","Note"],
+              [f"Short 45K","{:.0f}%".format(p45*100),f"{days_short}d","Correction"],
+              [f"Short 35K","{:.0f}%".format(p35*100),f"{days_short}d","Deep wick"],
+              [f"35K OR 45K","{:.0f}%".format(p_short*100),"Before bull","VALID"],
+              [f"Long 750K","{:.1f}%".format(p750*100),f"{days_long}d to 2030","Lottery long"]]
           tb1=axs[1].table(cellText=t1,loc='center',cellLoc='center'); tb1.scale(1,1.5); tb1.auto_set_font_size(False); tb1.set_fontsize(7)
-
           axs[2].axis('off')
-          t2=[["$1K Plan","Setup","EV $","Acumen View"],
-              ["Short 45K","Ent 45K SL 52K TP 35K",f"${ev45:.0f}",f"RR 1:1.5 EV pos if P>40%"],
-              ["Short 35K","Ent 35K SL 42K TP 26K",f"${ev35:.0f}","High risk deep"],
-              ["Long 750K","Spot hold to 2030",f"${ev750:.0f}","Small size 10% cap"],
-              ["Base","$400@45K $300@35K $300 Hold","$1K Total","Edu only - Not FA"]]
+          t2=[["$1K Plan","Setup","EV $","Acumen"],
+              ["Short 45K","45K SL 52K TP 35K",f"${ev45:.0f}","RR 1:1.5"],
+              ["Short 35K","35K SL 42K TP 26K",f"${ev35:.0f}","High risk"],
+              ["Long 750K","Spot to 2030",f"${ev750:.0f}","10% cap"],
+              ["Base","$400@$45K $300@$35K $300 Hold","$1K","Edu Only"]]
           tb2=axs[2].table(cellText=t2,loc='center',cellLoc='center'); tb2.scale(1,1.6); tb2.auto_set_font_size(False); tb2.set_fontsize(6.5)
-
           plt.tight_layout()
           plt.savefig('probability_tracker_daily.png',dpi=220,bbox_inches='tight')
-          print(f"Done P45={p45} P35={p35} P750={p750}")
+          print(f"DONE {p45} {p35} {p750}")
           PY
-      - run: |
+          python tracker.py
+      - name: Push
+        run: |
           git config user.name "HZ Bot"
           git config user.email "bot@hz.com"
           git add probability_tracker_daily.png
