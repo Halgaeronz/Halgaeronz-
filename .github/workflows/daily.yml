@@ -1,0 +1,52 @@
+name: HZ Daily BTC Tracker
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests matplotlib numpy
+      - name: Generate tracker
+        run: |
+          python -c "
+          import matplotlib.pyplot as plt, numpy as np, requests
+          from datetime import datetime
+          try:
+              btc = float(requests.get('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT', timeout=10).json()['price'])
+          except:
+              btc = 69222
+          prices = np.linspace(80000,30000,100)
+          p45 = np.clip(0.15+0.7*np.exp(-((prices-45000)/20000)**2)+0.2*(1-prices/80000),0.1,0.85)
+          p35 = np.clip(0.05+0.5*np.exp(-((prices-35000)/15000)**2)+0.15*(1-prices/80000),0.05,0.6)
+          fig,(ax1,ax2)=plt.subplots(2,1,figsize=(10,7),gridspec_kw={'height_ratios':[2,1]})
+          fig.patch.set_facecolor('black'); ax1.set_facecolor('black')
+          ax1.plot(prices,p45*100,color='#FF5252',label='P Touch \$45K ~65%',lw=2.5)
+          ax1.plot(prices,p35*100,color='#FFD700',label='P Touch \$35K ~30%',lw=2.5)
+          ax1.axvline(btc,color='white',ls='--',alpha=0.8)
+          ax1.set_title(f'HZ ANALYST Tracker BTC \${btc:.0f} {datetime.now().strftime(\"%b %d %Y\")} Lagos',color='white',fontweight='bold')
+          ax1.set_ylabel('Probability %',color='white'); ax1.tick_params(colors='white')
+          ax1.legend(facecolor='black',edgecolor='white',labelcolor='white')
+          ax1.grid(alpha=0.2)
+          ax2.axis('off')
+          data=[['Target','P Touch','\$10 Plan','If Touched'],['\$45K','65%','\$5 buy','+54%'],['\$35K','30%','\$3 buy','+98%'],['Hold','35% bull','\$2 hold','Base']]
+          table=ax2.table(cellText=data,loc='center',cellLoc='center'); table.scale(1,2)
+          plt.tight_layout()
+          plt.savefig('probability_tracker_daily.png',dpi=250,facecolor='black')
+          print(f'Done BTC \${btc}')
+          "
+      - name: Push
+        run: |
+          git config user.name 'HZ Bot'
+          git config user.email 'hz@bot.com'
+          git add probability_tracker_daily.png || true
+          git diff --staged --quiet || git commit -m 'Auto: BTC Tracker'
+          git push
