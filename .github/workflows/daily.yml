@@ -1,9 +1,8 @@
 name: HZ Daily BTC Tracker
 on:
+  workflow_dispatch:
   schedule:
     - cron: '0 6 * * *'
-  workflow_dispatch:
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -12,31 +11,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install
-        run: pip install requests matplotlib numpy
-      - name: Build Chart
-        run: |
-          cat > tracker.py << 'PY'
+      - run: pip install requests matplotlib
+      - run: |
+          python << 'PY'
           import requests, matplotlib.pyplot as plt, datetime
           try:
-            btc = requests.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', timeout=10).json()['bitcoin']['usd']
-          except:
-            btc = 69000
-          plt.style.use('dark_background')
-          fig, ax = plt.subplots(figsize=(8,4.5))
-          ax.text(0.5,0.7,f'BRC BTC ${btc:.0f}', ha='center', fontsize=22, weight='bold', color='gold', transform=ax.transAxes)
-          ax.text(0.5,0.45,f'35K/45K Short Respected Before Bullrun: 68%\n750K Before 2030: 3.2%\n$1K Plan: $400@45K $300@35K $300 Hold\nAcumen EV: Short 45K best RR', ha='center', fontsize=11, color='white', transform=ax.transAxes)
-          ax.text(0.5,0.15,f'{datetime.datetime.now():%d %b %Y} Lagos | Educational Only', ha='center', fontsize=9, color='gray', transform=ax.transAxes)
-          ax.axis('off')
-          plt.tight_layout()
-          plt.savefig('probability_tracker_daily.png', dpi=200, bbox_inches='tight')
-          print("Done", btc)
+            btc=requests.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd',timeout=10).json()['bitcoin']['usd']
+          except: btc=69500
+          fig,ax=plt.subplots(figsize=(8,4.5))
+          fig.patch.set_facecolor('#0a0a0a'); ax.set_facecolor('#0a0a0a')
+          ax.text(0.5,0.75,f'BTC ${btc:.0f}',ha='center',fontsize=28,weight='bold',color='#FFD700',transform=ax.transAxes)
+          ax.text(0.5,0.42,'35K/45K Short: 68% Before Bullrun\n750K Before 2030: 3.2%\n$1K: $400@45K $300@35K $300 Hold\nEV Best: Short 45K | Edu Only',ha='center',fontsize=11,color='white',transform=ax.transAxes,linespacing=1.6)
+          ax.text(0.5,0.08,f"{datetime.datetime.now():%d %b %Y} Lagos",ha='center',fontsize=8,color='gray',transform=ax.transAxes)
+          ax.axis('off'); plt.tight_layout()
+          plt.savefig('probability_tracker_daily.png',dpi=220,bbox_inches='tight',facecolor='#0a0a0a')
+          print("OK",btc)
           PY
-          python tracker.py
-      - name: Push
-        run: |
+      - run: |
           git config user.name "HZ Bot"
           git config user.email "bot@hz.com"
           git add probability_tracker_daily.png
-          git commit -m "Auto: Daily BTC" || echo "no changes"
+          git commit -m "Daily BTC" || echo "no change"
           git push
