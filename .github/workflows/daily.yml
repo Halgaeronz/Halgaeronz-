@@ -12,118 +12,78 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install
-        run: pip install requests matplotlib numpy
-      - name: Generate Acumen Actuary Tracker
+      - run: pip install requests matplotlib numpy
+      - name: Build Acumen Chart
         run: |
-          python - << 'PY'
-          import requests, numpy as np, matplotlib.pyplot as plt, matplotlib.gridspec as gs
-          from datetime import datetime, date
+          python << 'PY'
+          import requests, numpy as np, matplotlib.pyplot as plt
+          from datetime import date, datetime
 
-          # --- BTC PRICE ---
           try:
             btc = requests.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', timeout=10).json()['bitcoin']['usd']
           except:
             btc = 69222
 
-          # --- ACTUARIAL PARAMS ---
-          vol_annual = 0.65
-          mu_annual = 0.15  # conservative drift
-          capital = 1000
-          today = datetime.now()
-          days_short = 400  # before next bull run ~ late 2027
-          days_long = (date(2030,1,1) - date.today()).days  # to 2030
-
-          def monte_carlo_hit_prob(S0, H, T_days, mu, sigma, n=15000, lower=True):
-              T = T_days/365.0
-              dt = 1/365.0
-              steps = int(T_days)
-              # vectorized
-              hits = 0
-              for _ in range(n//100):
-                  # 100 paths per batch
-                  Z = np.random.normal(0,1,(100, steps))
-                  drift = (mu - 0.5*sigma**2)*dt
-                  path = S0 * np.exp(np.cumsum(drift + sigma*np.sqrt(dt)*Z, axis=1))
-                  if lower:
-                      if np.any(path <= H):
-                          hits += np.sum(np.any(path <= H, axis=1))
-                  else:
-                      if np.any(path >= H):
-                          hits += np.sum(np.any(path >= H, axis=1))
-              return hits/n
+          vol, mu = 0.65, 0.15
+          days_short, days_long = 400, (date(2030,1,1)-date.today()).days
+          def prob_hit(S0,H,Td,lower=True,n=12000):
+            steps=Td
+            hits=0
+            for _ in range(n//100):
+              Z=np.random.normal(0,1,(100,steps))
+              dt=1/365
+              drift=(mu-0.5*vol*vol)*dt
+              paths=S0*np.exp(np.cumsum(drift+vol*np.sqrt(dt)*Z, axis=1))
+              if lower:
+                hits+=np.sum(np.any(paths<=H,axis=1))
+              else:
+                hits+=np.sum(np.any(paths>=H,axis=1))
+            return hits/n
 
           np.random.seed(42)
-          p45 = monte_carlo_hit_prob(btc, 45000, days_short, mu_annual, vol_annual, lower=True)
-          p35 = monte_carlo_hit_prob(btc, 35000, days_short, mu_annual, vol_annual, lower=True)
-          p35_and_45 = p35  # if 35K hit, 45K already hit
-          p750 = monte_carlo_hit_prob(btc, 750000, days_long, mu_annual, vol_annual, lower=False)
+          p45=prob_hit(btc,45000,days_short,True)
+          p35=prob_hit(btc,35000,days_short,True)
+          p750=prob_hit(btc,750000,days_long,False)
+          p_short=max(p45,p35)
 
-          # Joint: probability 35K OR 45K before bull
-          p_short_zone = max(p45, p35)
+          capital=1000
+          ev45=p45*0.22*capital - (1-p45)*0.15*capital
+          ev35=p35*0.25*capital - (1-p35)*0.20*capital
+          ev750=p750*(750000/btc-1)*capital*0.1 - (1-p750)*0.6*capital*0.1
 
-          # Acumen calc for $1K short
-          # Short 45K: entry 45K, SL 52K (15% risk), TP 35K (22% profit)
-          risk_45 = 0.15
-          reward_45 = (45000-35000)/45000
-          ev_45 = p45*reward_45*capital - (1-p45)*risk_45*capital
-
-          risk_35 = 0.20
-          reward_35 = 0.25
-          ev_35 = p35*reward_35*capital - (1-p35)*risk_35*capital
-
-          # Long 750K: entry ~current, hold to 2030, 10x if hits
-          ev_750 = p750 * (750000/btc -1)*capital - (1-p750)*0.6*capital
-
-          # --- PLOT ---
           plt.style.use('dark_background')
-          fig = plt.figure(figsize=(10,8))
-          grid = gs.GridSpec(3,2, height_ratios=[2.2,1.2,1.4], hspace=0.4)
+          fig, axs = plt.subplots(3,1,figsize=(9,9), gridspec_kw={'height_ratios':[2,1,1.2]})
+          xs=np.linspace(30000,80000,100)
+          axs[0].plot(xs,[95*np.exp(-0.00005*(x-35000)) for x in xs], color='#FF5555', label='Short Zone Prob')
+          axs[0].axvline(btc,color='white',ls='--',label=f'BTC Now ${btc:.0f}')
+          axs[0].axvline(45000,color='gold',ls=':',label='45K Short')
+          axs[0].axvline(35000,color='orange',ls=':',label='35K Short')
+          axs[0].set_title(f'HZ ANALYST $1K Acumen & Actuary | BTC ${btc:.0f} {datetime.now():%d %b %Y} Lagos - Educational',fontsize=10,weight='bold')
+          axs[0].set_ylabel('Prob %'); axs[0].legend(fontsize=7); axs[0].set_ylim(0,100)
 
-          ax = fig.add_subplot(grid[0,:])
-          xs = np.linspace(30000, 80000, 150)
-          ax.plot(xs, [max(5, 95*np.exp(-0.00006*(x-35000))) for x in xs], label=f'Short Zone Touch', color='#FF4444')
-          ax.axvline(btc, color='white', ls='--', label=f'BTC Now ${btc:.0f}')
-          ax.axvline(45000, color='gold', ls=':', label='Short $45K')
-          ax.axvline(35000, color='orange', ls=':', label='Short $35K')
-          ax.set_title(f'HZ ANALYST | $1K Acumen & Actuary View | BTC ${btc:.0f} {today.strftime("%d %b %Y")} Lagos', fontsize=11, weight='bold')
-          ax.set_ylabel('Prob. Touch Before Bullrun (%)')
-          ax.legend(fontsize=7, loc='upper right')
-          ax.set_ylim(0,100)
+          axs[1].axis('off')
+          t1=[["Scenario","P Respected","Horizon","Actuary Note"],
+              [f"Short 45K","{:.0f}%".format(p45*100),f"{days_short}d before bull","Correction likely"],
+              [f"Short 35K","{:.0f}%".format(p35*100),f"{days_short}d before bull","Deep wick"],
+              [f"35K OR 45K","{:.0f}%".format(p_short*100),"Before bull","Short zone VALID"],
+              [f"Long 750K","{:.1f}%".format(p750*100),f"{days_long}d to 2030","Convex lottery long"]]
+          tb1=axs[1].table(cellText=t1,loc='center',cellLoc='center'); tb1.scale(1,1.5); tb1.auto_set_font_size(False); tb1.set_fontsize(7)
 
-          # Table 1: Probabilities
-          ax2 = fig.add_subplot(grid[1,:])
-          ax2.axis('off')
-          data1 = [
-              ["Scenario", "P(Respected)", "Horizon", "Interpretation"],
-              [f"Short $45K respected (touch)", f"{p45*100:.0f}%", f"{days_short}d to bull", "High prob correction"],
-              [f"Short $35K respected (touch)", f"{p35*100:.0f}%", f"{days_short}d to bull", "Deep wick possible"],
-              [f"$35K OR $45K respected", f"{p_short_zone*100:.0f}%", f"Before bull", "Actuarial: Short zone valid"],
-              [f"Long $750K respected", f"{p750*100:.1f}%", f"{days_long}d to 2030", "Low prob, convex payoff"],
-          ]
-          t1 = ax2.table(cellText=data1, loc='center', cellLoc='center')
-          t1.auto_set_font_size(False); t1.set_fontsize(7); t1.scale(1,1.6)
+          axs[2].axis('off')
+          t2=[["$1K Plan","Setup","EV $","Acumen View"],
+              ["Short 45K","Ent 45K SL 52K TP 35K",f"${ev45:.0f}",f"RR 1:1.5 EV pos if P>40%"],
+              ["Short 35K","Ent 35K SL 42K TP 26K",f"${ev35:.0f}","High risk deep"],
+              ["Long 750K","Spot hold to 2030",f"${ev750:.0f}","Small size 10% cap"],
+              ["Base","$400@45K $300@35K $300 Hold","$1K Total","Edu only - Not FA"]]
+          tb2=axs[2].table(cellText=t2,loc='center',cellLoc='center'); tb2.scale(1,1.6); tb2.auto_set_font_size(False); tb2.set_fontsize(6.5)
 
-          # Table 2: Acumen with $1K
-          ax3 = fig.add_subplot(grid[2,:])
-          ax3.axis('off')
-          data2 = [
-              ["Plan $1K", "Setup", "EV ($)", "Actuary View / Risk"],
-              ["Short $45K", "Entry 45K SL 52K TP 35K", f"${ev_45:.0f}", f"VaR 15% | RR 1:{reward_45/risk_45:.1f} | Edu only"],
-              ["Short $35K", "Entry 35K SL 42K TP 26K", f"${ev_35:.0f}", f"VaR 20% | Deep value short"],
-              ["Long $750K", f"Spot hold to 2030", f"${ev_750:.0f}", f"P10% lottery | Hold 40% max loss | Edu"],
-              ["Base", "$1K: $400@45K $300@35K $300 Hold", "$1K total", "Not financial advice - Educational"]
-          ]
-          t2 = ax3.table(cellText=data2, loc='center', cellLoc='center')
-          t2.auto_set_font_size(False); t2.set_fontsize(6.5); t2.scale(1,1.7)
-
-          plt.savefig('probability_tracker_daily.png', dpi=250, bbox_inches='tight')
-          print(f"P45 {p45} P35 {p35} P750 {p750}")
+          plt.tight_layout()
+          plt.savefig('probability_tracker_daily.png',dpi=220,bbox_inches='tight')
+          print(f"Done P45={p45} P35={p35} P750={p750}")
           PY
-      - name: Push
-        run: |
+      - run: |
           git config user.name "HZ Bot"
           git config user.email "bot@hz.com"
           git add probability_tracker_daily.png
-          git commit -m "Auto: BTC Tracker" || echo "no change"
+          git commit -m "Auto: BTC Tracker" || echo "no changes"
           git push
